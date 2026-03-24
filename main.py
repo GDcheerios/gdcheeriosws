@@ -3,10 +3,19 @@ import json
 import websockets
 import os
 import dotenv
+from PSQLConnector.connector import PSQLConnection as db
 
 HOST = "0.0.0.0"
 PORT = 8765
 dotenv.load_dotenv()
+
+print(os.environ.get("DB_HOSTNAME"))
+db.connect(
+    user=os.environ.get("DB_USER"),
+    password=os.environ.get("DB_PASSWORD"),
+    host=os.environ.get("DB_HOSTNAME"),
+    database=os.environ.get("DB"),
+)
 
 
 async def handle_connection(websocket):
