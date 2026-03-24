@@ -1,9 +1,12 @@
 import asyncio
 import json
 import websockets
+import os
+import dotenv
 
 HOST = "0.0.0.0"
 PORT = 8765
+dotenv.load_dotenv()
 
 
 async def handle_connection(websocket):
