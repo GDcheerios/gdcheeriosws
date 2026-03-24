@@ -19,50 +19,55 @@ db.connect(
 
 
 async def handle_connection(websocket):
-    global data
     async for message in websocket:
+        print("new message")
         try:
-            data = json.loads(message)
+            payload = json.loads(message)
         except json.JSONDecodeError as e:
-            payload = {"error": f"Invalid JSON: {e}"}
-            await websocket.send(json.dumps(payload))
+            print(e)
+            await websocket.send(json.dumps({"error": f"Invalid JSON: {e}"}))
+            continue
 
-    payload = data
-    try:
-        if payload.get("type") == "statistic":
-            db.execute(
-                """
-                INSERT INTO statistics
-                (user,
-                 type,
-                 amount,
-                 enemy,
-                 character,
-                 weapon,
-                 location,
-                 status_effect,
-                 visitation,
-                 leaderboard)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                params=(
-                    payload.get("user"),
-                    payload.get("stat"),
-                    payload.get("amount"),
-                    payload.get("enemy"),
-                    payload.get("character"),
-                    payload.get("weapon"),
-                    payload.get("location"),
-                    payload.get("status_effect"),
-                    payload.get("visitation"),
-                    payload.get("leaderboard")
+        try:
+            if payload.get("type") == "statistic":
+                print(payload)
+                await asyncio.to_thread(
+                    db.execute,
+                    """
+                    INSERT INTO gq_statistics
+                    ("user",
+                     "type",
+                     amount,
+                     enemy,
+                     character,
+                     weapon,
+                     location,
+                     status_effect,
+                     visitation,
+                     leaderboard)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        payload.get("user"),
+                        payload.get("stat"),
+                        payload.get("amount", 0),
+                        payload.get("enemy", None),
+                        payload.get("character", None),
+                        payload.get("weapon", None),
+                        payload.get("location", None),
+                        payload.get("status_effect", None),
+                        payload.get("visitation", None),
+                        payload.get("leaderboard", None),
+                    ),
                 )
-            )
+                response = {"ok": True}
+            else:
+                response = {"error": "Unsupported type"}
+        except Exception as e:
+            print(e)
+            response = {"error": "Invalid request"}
 
-    except:
-        payload = {"error": "Invalid request"}
-
-    await websocket.send(json.dumps(payload))
+        await websocket.send(json.dumps(response))
 
 
 async def main():
