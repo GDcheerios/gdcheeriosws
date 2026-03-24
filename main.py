@@ -28,6 +28,39 @@ async def handle_connection(websocket):
             await websocket.send(json.dumps(payload))
 
     payload = data
+    try:
+        if payload.get("type") == "statistic":
+            db.execute(
+                """
+                INSERT INTO statistics
+                (user,
+                 type,
+                 amount,
+                 enemy,
+                 character,
+                 weapon,
+                 location,
+                 status_effect,
+                 visitation,
+                 leaderboard)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                params=(
+                    payload.get("user"),
+                    payload.get("stat"),
+                    payload.get("amount"),
+                    payload.get("enemy"),
+                    payload.get("character"),
+                    payload.get("weapon"),
+                    payload.get("location"),
+                    payload.get("status_effect"),
+                    payload.get("visitation"),
+                    payload.get("leaderboard")
+                )
+            )
+
+    except:
+        payload = {"error": "Invalid request"}
 
     await websocket.send(json.dumps(payload))
 
