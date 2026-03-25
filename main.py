@@ -5,9 +5,9 @@ import os
 import dotenv
 from PSQLConnector.connector import PSQLConnection as db
 
-HOST = "0.0.0.0"
-PORT = 8765
 dotenv.load_dotenv()
+HOST = "0.0.0.0"
+PORT = int(os.environ.get("PORT", 8765))
 
 print(os.environ.get("DB_HOSTNAME"))
 db.connect(
