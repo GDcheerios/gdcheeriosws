@@ -1,6 +1,7 @@
+import http
 import asyncio
-import json
 import websockets
+import json
 import os
 import dotenv
 from PSQLConnector.connector import PSQLConnection as db
@@ -16,6 +17,12 @@ db.connect(
     host=os.environ.get("DB_HOSTNAME"),
     database=os.environ.get("DB"),
 )
+
+
+async def health_check(path, request_headers):
+    if path == "/":
+        return http.HTTPStatus.OK, [], b"OK\n"
+    return None
 
 
 async def handle_connection(websocket):
@@ -71,7 +78,7 @@ async def handle_connection(websocket):
 
 
 async def main():
-    async with websockets.serve(handle_connection, HOST, PORT):
+    async with websockets.serve(handle_connection, HOST, PORT, process_request=health_check):
         print(f"WebSocket server listening on ws://{HOST}:{PORT}")
         await asyncio.Future()
 
