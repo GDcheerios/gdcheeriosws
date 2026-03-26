@@ -20,8 +20,8 @@ db.connect(
 
 
 async def health_check(path, request_headers):
-    if path == "/":
-        return http.HTTPStatus.OK, [], b"OK\n"
+    if path in ("/", "/healthz"):
+        return http.HTTPStatus.OK, [("Content-Type", "text/plain")], b"OK\n"
     return None
 
 
@@ -78,7 +78,12 @@ async def handle_connection(websocket):
 
 
 async def main():
-    async with websockets.serve(handle_connection, HOST, PORT, process_request=health_check):
+    async with websockets.serve(
+        handle_connection,
+        HOST,
+        PORT,
+        process_request=health_check,
+    ):
         print(f"WebSocket server listening on ws://{HOST}:{PORT}")
         await asyncio.Future()
 
