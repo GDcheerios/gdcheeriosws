@@ -194,6 +194,8 @@ async def main():
         HOST,
         PORT,
         process_request=health_check,
+        ping_interval=20,
+        ping_timeout=20,
     ):
         print(f"WebSocket server listening on ws://{HOST}:{PORT}")
         await asyncio.Future()
