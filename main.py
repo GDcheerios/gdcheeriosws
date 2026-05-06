@@ -4,19 +4,31 @@ import websockets
 import json
 import os
 import dotenv
+import logging
 from PSQLConnector.connector import PSQLConnection as db
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("websocket_server")
 
 dotenv.load_dotenv()
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", 8765))
 
-print(os.environ.get("DB_HOSTNAME"))
-db.connect(
-    user=os.environ.get("DB_USER"),
-    password=os.environ.get("DB_PASSWORD"),
-    host=os.environ.get("DB_HOSTNAME"),
-    database=os.environ.get("DB"),
-)
+logger.info(f"Connecting to database at {os.environ.get('DB_HOSTNAME')}...")
+try:
+    db.connect(
+        user=os.environ.get("DB_USER"),
+        password=os.environ.get("DB_PASSWORD"),
+        host=os.environ.get("DB_HOSTNAME"),
+        database=os.environ.get("DB"),
+    )
+    logger.info("Database connection established.")
+except Exception as e:
+    logger.error(f"Failed to connect to database: {e}")
 
 SUBSCRIBERS_BY_MATCH = {}
 CONNECTION_SUBSCRIPTIONS = {}
@@ -45,6 +57,7 @@ def _add_subscription(websocket, match_id):
     if websocket not in CONNECTION_SUBSCRIPTIONS:
         CONNECTION_SUBSCRIPTIONS[websocket] = set()
     CONNECTION_SUBSCRIPTIONS[websocket].add(match_id)
+    logger.debug(f"Added subscription for match {match_id}. Socket: {id(websocket)}")
 
 
 async def _remove_connection(websocket):
@@ -57,6 +70,7 @@ async def _remove_connection(websocket):
         subscribers.discard(websocket)
         if not subscribers:
             SUBSCRIBERS_BY_MATCH.pop(match_id, None)
+    logger.info(f"Connection closed and cleaned up. Socket: {id(websocket)}")
 
 
 async def _broadcast_to_match_ids(match_ids, payload):
@@ -68,6 +82,7 @@ async def _broadcast_to_match_ids(match_ids, payload):
         targets.update(SUBSCRIBERS_BY_MATCH.get(match_id, set()))
 
     if not targets:
+        logger.debug(f"No targets found for broadcast to matches: {match_ids}")
         return
 
     encoded = json.dumps(payload)
@@ -76,7 +91,8 @@ async def _broadcast_to_match_ids(match_ids, payload):
     for socket in list(targets):
         try:
             await socket.send(encoded)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to send to socket {id(socket)}: {e}")
             stale_connections.append(socket)
 
     for socket in stale_connections:
@@ -84,6 +100,8 @@ async def _broadcast_to_match_ids(match_ids, payload):
 
 
 async def handle_connection(websocket):
+    addr = websocket.remote_address
+    logger.info(f"New connection from {addr}")
     CONNECTION_SUBSCRIPTIONS[websocket] = set()
 
     try:
@@ -91,6 +109,7 @@ async def handle_connection(websocket):
             try:
                 payload = json.loads(message)
             except json.JSONDecodeError as e:
+                logger.warning(f"Invalid JSON received from {addr}: {e}")
                 await websocket.send(json.dumps({"error": f"Invalid JSON: {e}"}))
                 continue
 
@@ -98,33 +117,25 @@ async def handle_connection(websocket):
                 message_type = payload.get("type")
 
                 if message_type == "statistic":
+                    logger.info(f"Recording statistic: {payload.get('stat')} for user {payload.get('user')}")
                     await asyncio.to_thread(
                         db.execute,
                         """
                         INSERT INTO gq_statistics
-                        ("user",
-                         "type",
-                         amount,
-                         enemy,
-                         character,
-                         weapon,
-                         location,
-                         status_effect,
-                         visitation,
-                         leaderboard)
+                        ("user", "type", amount, enemy, character, weapon, location, status_effect, visitation, leaderboard)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         (
                             payload.get("user"),
                             payload.get("stat"),
                             payload.get("amount", 0),
-                            payload.get("enemy", None),
-                            payload.get("character", None),
-                            payload.get("weapon", None),
-                            payload.get("location", None),
-                            payload.get("status_effect", None),
-                            payload.get("visitation", None),
-                            payload.get("leaderboard", None),
+                            payload.get("enemy"),
+                            payload.get("character"),
+                            payload.get("weapon"),
+                            payload.get("location"),
+                            payload.get("status_effect"),
+                            payload.get("visitation"),
+                            payload.get("leaderboard"),
                         ),
                     )
                     response = {"ok": True}
@@ -157,13 +168,9 @@ async def handle_connection(websocket):
                     if payload.get("match_id") is not None:
                         sent_match_ids.append(payload.get("match_id"))
 
-                    normalized_match_ids = []
-                    for raw_match_id in sent_match_ids:
-                        match_id = _parse_match_id(raw_match_id)
-                        if match_id is not None:
-                            normalized_match_ids.append(match_id)
-
-                    normalized_match_ids = list(dict.fromkeys(normalized_match_ids))
+                    normalized_match_ids = list(dict.fromkeys(
+                        m for m in (_parse_match_id(x) for x in sent_match_ids) if m is not None
+                    ))
 
                     outbound = {
                         "type": "osu_user_refreshed",
@@ -172,14 +179,16 @@ async def handle_connection(websocket):
                         "user": user,
                         "match_user": match_user,
                     }
+                    logger.info(f"Broadcasting osu_user_refreshed for user {user.get('username')} to matches {normalized_match_ids}")
                     await _broadcast_to_match_ids(normalized_match_ids, outbound)
-
                     response = {"ok": True, "delivered_to_matches": normalized_match_ids}
 
                 else:
+                    logger.warning(f"Unsupported message type received: {message_type}")
                     response = {"error": "Unsupported type"}
 
-            except Exception:
+            except Exception as e:
+                logger.exception(f"Unexpected error processing message: {e}")
                 response = {"error": "Invalid request"}
 
             await websocket.send(json.dumps(response))
@@ -190,16 +199,19 @@ async def handle_connection(websocket):
 
 async def main():
     async with websockets.serve(
-        handle_connection,
-        HOST,
-        PORT,
-        process_request=health_check,
-        ping_interval=20,
-        ping_timeout=20,
+            handle_connection,
+            HOST,
+            PORT,
+            process_request=health_check,
+            ping_interval=20,
+            ping_timeout=20,
     ):
-        print(f"WebSocket server listening on ws://{HOST}:{PORT}")
+        logger.info(f"WebSocket server started on ws://{HOST}:{PORT}")
         await asyncio.Future()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Server stopped by user.")
