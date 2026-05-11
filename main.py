@@ -17,7 +17,7 @@ dotenv.load_dotenv()
 
 logger_provider = LoggerProvider()
 _logs.set_logger_provider(logger_provider)
-otel_log_exporter = OTLPLogExporter(endpoint=os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://status:4318") + "/v1/logs")
+otel_log_exporter = OTLPLogExporter()
 logger_provider.add_log_record_processor(BatchLogRecordProcessor(otel_log_exporter))
 
 logging.basicConfig(
