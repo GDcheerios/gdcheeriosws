@@ -8,6 +8,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+RUN pip install opentelemetry-distro opentelemetry-exporter-otlp
+RUN opentelemetry-bootstrap -a install
+
 COPY . .
 
-CMD ["python", "main.py"]
+CMD ["opentelemetry-instrument", "python", "main.py"]
