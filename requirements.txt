@@ -13,5 +13,9 @@ opentelemetry-instrumentation-wsgi==0.63b1
 opentelemetry-instrumentation-dbapi==0.63b1
 opentelemetry-instrumentation-asgi==0.63b1
 
+# Prometheus
+prometheus-client>=0.20.0
+opentelemetry-exporter-prometheus>=0.46b0
+
 # Custom DB Connection
 PSQLConnection @ git+https://github.com/GDcheerios/PSQLConnection.git
