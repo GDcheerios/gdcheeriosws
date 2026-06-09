@@ -13,7 +13,16 @@ from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 
+from prometheus_client import start_http_server
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.exporter.prometheus import PrometheusMetricReader
+
 dotenv.load_dotenv()
+
+start_http_server(port=8000, addr="0.0.0.0")
+prometheus_reader = PrometheusMetricReader()
+meter_provider = MeterProvider(metric_readers=[prometheus_reader])
+metrics.set_meter_provider(meter_provider)
 
 logger_provider = LoggerProvider()
 _logs.set_logger_provider(logger_provider)
@@ -32,7 +41,7 @@ tracer = trace.get_tracer("gentry.ws")
 meter = metrics.get_meter("gentry.ws")
 
 active_connections = meter.create_up_down_counter(
-    "players_online",
+    "ws_connections_active",
     description="Number of currently active websocket connections"
 )
 messages_processed = meter.create_counter(
