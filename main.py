@@ -153,7 +153,7 @@ async def handle_connection(websocket):
                         await asyncio.to_thread(
                             db.execute,
                             """
-                            INSERT INTO gq_statistics
+                            INSERT INTO gq.statistics
                             ("user", "type", amount, enemy, character, weapon, location, status_effect, visitation, leaderboard)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """,
