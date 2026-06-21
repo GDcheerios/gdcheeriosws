@@ -154,7 +154,7 @@ async def handle_connection(websocket):
                             db.execute,
                             """
                             INSERT INTO gq.statistics
-                            ("user", "type", amount, enemy, character, weapon, location, status_effect, visitation, leaderboard)
+                            (user_id, "type", amount, enemy, character, weapon, location, status_effect, visitation_id, leaderboard_id)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """,
                             (
