@@ -134,6 +134,21 @@ async def _broadcast_to_match_ids(match_ids, payload):
         await _remove_connection(socket)
 
 
+def _normalize_match_ids(values):
+    """Return unique, valid integer match IDs from a scalar or iterable."""
+    if values is None:
+        return []
+    if isinstance(values, (str, int)):
+        values = [values]
+    if not isinstance(values, (list, tuple, set)):
+        return []
+
+    return list(dict.fromkeys(
+        match_id for match_id in (_parse_match_id(value) for value in values)
+        if match_id is not None
+    ))
+
+
 async def handle_connection(websocket):
     addr = websocket.remote_address
     logger.info(f"New connection from {addr}")
@@ -202,25 +217,69 @@ async def handle_connection(websocket):
                             CONNECTION_SUBSCRIPTIONS.setdefault(websocket, set()).discard(match_id)
                             response = {"ok": True, "type": "unsubscribed", "match_id": match_id}
 
-                    elif message_type == "osu_user_refreshed":
-                        user = payload.get("user", {})
-                        match_user = payload.get("match_user")
-                        sent_match_ids = payload.get("match_ids") or []
-                        if payload.get("match_id") is not None:
-                            sent_match_ids.append(payload.get("match_id"))
+                    elif message_type == "refresh":
+                        user = payload.get("user")
+                        if not isinstance(user, dict) or user.get("id") is None:
+                            response = {"error": "user with an id is required"}
+                            await websocket.send(json.dumps(response))
+                            continue
 
-                        normalized_match_ids = list(dict.fromkeys(
-                            m for m in (_parse_match_id(x) for x in sent_match_ids) if m is not None
-                        ))
+                        requested_match_ids = _normalize_match_ids(payload.get("match_ids"))
+                        requested_match_ids.extend(
+                            _normalize_match_ids(payload.get("match_id"))
+                        )
+                        requested_match_ids = list(dict.fromkeys(requested_match_ids))
+
+                        subscribed_match_ids = CONNECTION_SUBSCRIPTIONS.get(websocket, set())
+                        normalized_match_ids = [
+                            match_id for match_id in requested_match_ids
+                            if match_id in subscribed_match_ids
+                        ]
+                        if not normalized_match_ids:
+                            response = {"error": "subscribe to a match before publishing"}
+                            await websocket.send(json.dumps(response))
+                            continue
 
                         outbound = {
-                            "type": "osu_user_refreshed",
-                            "match_id": payload.get("match_id"),
+                            "type": "refreshed",
+                            "match_id": normalized_match_ids[0],
                             "match_ids": normalized_match_ids,
                             "user": user,
-                            "match_user": match_user,
                         }
-                        logger.info(f"Broadcasting osu_user_refreshed for user {user.get('username')} to matches {normalized_match_ids}")
+                        logger.info(f"Broadcasting refreshed user {user.get('username')} to matches {normalized_match_ids}")
+                        await _broadcast_to_match_ids(normalized_match_ids, outbound)
+                        response = {"ok": True, "delivered_to_matches": normalized_match_ids}
+                        
+                    elif message_type == "new_score":
+                        score_id = _parse_match_id(payload.get("score_id"))
+                        if score_id is None:
+                            response = {"error": "score_id is required"}
+                            await websocket.send(json.dumps(response))
+                            continue
+
+                        requested_match_ids = _normalize_match_ids(payload.get("match_ids"))
+                        requested_match_ids.extend(
+                            _normalize_match_ids(payload.get("match_id"))
+                        )
+                        requested_match_ids = list(dict.fromkeys(requested_match_ids))
+
+                        subscribed_match_ids = CONNECTION_SUBSCRIPTIONS.get(websocket, set())
+                        normalized_match_ids = [
+                            match_id for match_id in requested_match_ids
+                            if match_id in subscribed_match_ids
+                        ]
+                        if not normalized_match_ids:
+                            response = {"error": "subscribe to a match before publishing"}
+                            await websocket.send(json.dumps(response))
+                            continue
+
+                        outbound = {
+                            "type": "new_score",
+                            "score_id": score_id,
+                            "match_id": normalized_match_ids[0],
+                            "match_ids": normalized_match_ids,
+                        }
+                        logger.info(f"Broadcasting new score {score_id} to matches {normalized_match_ids}")
                         await _broadcast_to_match_ids(normalized_match_ids, outbound)
                         response = {"ok": True, "delivered_to_matches": normalized_match_ids}
 
