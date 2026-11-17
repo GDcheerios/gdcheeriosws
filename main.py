@@ -17,6 +17,8 @@ from prometheus_client import start_http_server
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.exporter.prometheus import PrometheusMetricReader
 
+from server import Server
+
 dotenv.load_dotenv()
 
 start_http_server(port=8000, addr="0.0.0.0")
@@ -67,7 +69,9 @@ except Exception as e:
 
 SUBSCRIBERS_BY_MATCH = {}
 CONNECTION_SUBSCRIPTIONS = {}
+CONNECTED_USERS = {}
 
+server = Server()
 
 async def health_check(path, request_headers):
     if path in ("/", "/healthz"):
@@ -105,6 +109,11 @@ async def _remove_connection(websocket):
         subscribers.discard(websocket)
         if not subscribers:
             SUBSCRIBERS_BY_MATCH.pop(match_id, None)
+
+    user_data = CONNECTED_USERS.pop(websocket, None)
+    if user_data:
+        logger.info(f"User {user_data['user_id']} ({user_data['source']}) disconnected.")
+
     logger.info(f"Connection closed and cleaned up. Socket: {id(websocket)}")
 
 
@@ -152,7 +161,7 @@ def _normalize_match_ids(values):
 async def handle_connection(websocket):
     addr = websocket.remote_address
     logger.info(f"New connection from {addr}")
-    CONNECTION_SUBSCRIPTIONS[websocket] = set()
+    server.add_connection(websocket)
     active_connections.add(1)
 
     try:
@@ -169,8 +178,23 @@ async def handle_connection(websocket):
                     continue
 
                 try:
+                    server.process_message(payload)
                     message_type = payload.get("type")
                     span.set_attribute("message.type", str(message_type))
+
+                    if message_type == "identify":
+                        user_id = payload.get("user_id")
+                        source = payload.get("source", "unknown")
+
+                        if not user_id:
+                            response = {"error": "user_id is required to identify"}
+                        else:
+                            CONNECTED_USERS[websocket] = {
+                                "user_id": user_id,
+                                "source": source
+                            }
+                            logger.info(f"Identified user {user_id} connecting from {source}")
+                            response = {"ok": True, "type": "identified", "user_id": user_id}
 
                     if message_type == "statistic":
                         logger.info(f"Recording statistic: {payload.get('stat')} for user {payload.get('user')}")
@@ -192,7 +216,7 @@ async def handle_connection(websocket):
                                 payload.get("status_effect"),
                                 payload.get("visitation"),
                                 payload.get("leaderboard"),
-                            ),
+                            )
                         )
                         response = {"ok": True}
 
@@ -249,7 +273,7 @@ async def handle_connection(websocket):
                         logger.info(f"Broadcasting refreshed user {user.get('username')} to matches {normalized_match_ids}")
                         await _broadcast_to_match_ids(normalized_match_ids, outbound)
                         response = {"ok": True, "delivered_to_matches": normalized_match_ids}
-                        
+
                     elif message_type == "new_score":
                         score_id = _parse_match_id(payload.get("score_id"))
                         if score_id is None:

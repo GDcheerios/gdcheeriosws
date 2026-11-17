@@ -1,21 +1,14 @@
-websockets>=12.0
-python-dotenv==1.0.1
+websockets==17.3
+python-dotenv==1.2.4
 
-# OpenTelemetry Core
-opentelemetry-api==1.42.1
-opentelemetry-sdk==1.42.1
-opentelemetry-exporter-otlp==1.42.1
-opentelemetry-distro==0.63b1
-
-# OpenTelemetry Instrumentations
-opentelemetry-instrumentation==0.63b1
-opentelemetry-instrumentation-wsgi==0.63b1
-opentelemetry-instrumentation-dbapi==0.63b1
-opentelemetry-instrumentation-asgi==0.63b1
-
-# Prometheus
-prometheus-client>=0.20.0
-opentelemetry-exporter-prometheus>=0.46b0
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp
+opentelemetry-distro
+opentelemetry-instrumentation
+opentelemetry-instrumentation-wsgi
+opentelemetry-instrumentation-dbapi
+opentelemetry-instrumentation-flask
 
 # Custom DB Connection
 PSQLConnection @ git+https://github.com/GDcheerios/PSQLConnection.git
