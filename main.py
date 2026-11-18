@@ -218,70 +218,48 @@ async def handle_connection(websocket):
                             response = {"ok": True, "type": "unsubscribed", "match_id": match_id}
 
                     elif message_type == "refresh":
+                        logger.info("refresh event")
+                        print(payload)
                         user = payload.get("user")
                         if not isinstance(user, dict) or user.get("id") is None:
                             response = {"error": "user with an id is required"}
                             await websocket.send(json.dumps(response))
                             continue
 
-                        requested_match_ids = _normalize_match_ids(payload.get("match_ids"))
-                        requested_match_ids.extend(
-                            _normalize_match_ids(payload.get("match_id"))
-                        )
-                        requested_match_ids = list(dict.fromkeys(requested_match_ids))
-
-                        subscribed_match_ids = CONNECTION_SUBSCRIPTIONS.get(websocket, set())
-                        normalized_match_ids = [
-                            match_id for match_id in requested_match_ids
-                            if match_id in subscribed_match_ids
-                        ]
-                        if not normalized_match_ids:
-                            response = {"error": "subscribe to a match before publishing"}
-                            await websocket.send(json.dumps(response))
-                            continue
+                        match_ids = [row[0] for row in db.fetch_all("""
+                        SELECT match_id FROM osu.match_users where user_id = %s
+                        """, params=(user.get("id"),))]
 
                         outbound = {
                             "type": "refreshed",
-                            "match_id": normalized_match_ids[0],
-                            "match_ids": normalized_match_ids,
-                            "user": user,
+                            "match_ids": match_ids,
+                            "user_id": user.get("id")
                         }
-                        logger.info(f"Broadcasting refreshed user {user.get('username')} to matches {normalized_match_ids}")
-                        await _broadcast_to_match_ids(normalized_match_ids, outbound)
-                        response = {"ok": True, "delivered_to_matches": normalized_match_ids}
+                        logger.info(f"Broadcasting refreshed user {user.get('username')} to matches {match_ids}")
+                        await _broadcast_to_match_ids(match_ids, outbound)
+                        response = {"ok": True, "delivered_to_matches": match_ids}
                         
                     elif message_type == "new_score":
+                        logger.info("new score event")
+                        print(payload)
                         score_id = _parse_match_id(payload.get("score_id"))
                         if score_id is None:
                             response = {"error": "score_id is required"}
                             await websocket.send(json.dumps(response))
                             continue
 
-                        requested_match_ids = _normalize_match_ids(payload.get("match_ids"))
-                        requested_match_ids.extend(
-                            _normalize_match_ids(payload.get("match_id"))
-                        )
-                        requested_match_ids = list(dict.fromkeys(requested_match_ids))
-
-                        subscribed_match_ids = CONNECTION_SUBSCRIPTIONS.get(websocket, set())
-                        normalized_match_ids = [
-                            match_id for match_id in requested_match_ids
-                            if match_id in subscribed_match_ids
-                        ]
-                        if not normalized_match_ids:
-                            response = {"error": "subscribe to a match before publishing"}
-                            await websocket.send(json.dumps(response))
-                            continue
+                        match_ids = [row[0] for row in db.fetch_all("""
+                            SELECT match_id FROM osu.match_users where user_id = %s
+                        """, params=(payload.get("user_id"),))]
 
                         outbound = {
                             "type": "new_score",
                             "score_id": score_id,
-                            "match_id": normalized_match_ids[0],
-                            "match_ids": normalized_match_ids,
+                            "match_ids": match_ids
                         }
-                        logger.info(f"Broadcasting new score {score_id} to matches {normalized_match_ids}")
-                        await _broadcast_to_match_ids(normalized_match_ids, outbound)
-                        response = {"ok": True, "delivered_to_matches": normalized_match_ids}
+                        logger.info(f"Broadcasting new score {score_id} to matches {match_ids}")
+                        await _broadcast_to_match_ids(match_ids, outbound)
+                        response = {"ok": True, "delivered_to_matches": match_ids}
 
                     else:
                         logger.warning(f"Unsupported message type received: {message_type}")
